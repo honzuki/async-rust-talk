@@ -5,7 +5,10 @@ use std::{
     task::{Context, Poll, Waker},
 };
 
-use crate::task::{Task, TaskId};
+use crate::{
+    reactor::Reactor,
+    task::{Task, TaskId},
+};
 
 thread_local! {
     pub(super) static SCHEDULER: RefCell<Option<Scheduler>> = RefCell::new(None);
@@ -16,6 +19,7 @@ pub struct Scheduler {
     next_id: TaskId,
     tasks: HashMap<TaskId, Task>,
     pending: Vec<TaskId>,
+    reactor: Reactor,
 }
 
 impl Scheduler {
@@ -32,6 +36,10 @@ impl Scheduler {
 
     pub(super) fn schedule(&mut self, id: TaskId) {
         self.pending.push(id);
+    }
+
+    pub(crate) fn reactor(&mut self) -> &mut Reactor {
+        &mut self.reactor
     }
 
     pub fn block_on<T, O>(self, main_task: T) -> O
@@ -104,9 +112,13 @@ impl Scheduler {
                 }
             }
 
-            if SCHEDULER.with_borrow(|scheduler| scheduler.as_ref().unwrap().pending.is_empty()) {
-                // wait on reactor because we truly have no work left
-            }
+            SCHEDULER.with_borrow(|scheduler| {
+                let scheduler = scheduler.as_ref().unwrap();
+                if scheduler.pending.is_empty() {
+                    // block on reactor as we truly do not have any work left
+                    scheduler.reactor.block();
+                }
+            })
         }
     }
 }
