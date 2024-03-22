@@ -8,7 +8,7 @@ use std::{
 use nix::sys::epoll::EpollFlags;
 use pin_project::pin_project;
 
-use crate::scheduler;
+use crate::scheduler::REACTOR;
 
 pub struct Listener {
     listener: std::net::TcpListener,
@@ -25,6 +25,10 @@ impl Listener {
     pub fn accept(&self) -> impl Future<Output = ListenerAcceptOutput> + '_ {
         ListenerAccept { listener: self }
     }
+
+    pub fn local_addr(&self) -> std::io::Result<super::SocketAddr> {
+        self.listener.local_addr()
+    }
 }
 
 struct ListenerAccept<'a> {
@@ -39,8 +43,8 @@ impl<'a> Future for ListenerAccept<'a> {
         match self.listener.listener.accept() {
             Ok((stream, addr)) => Poll::Ready(Ok((Stream::new(stream)?, addr))),
             Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
-                scheduler::SCHEDULER.with_borrow_mut(|scheduler| {
-                    scheduler.as_mut().unwrap().reactor().register(
+                REACTOR.with_borrow_mut(|reactor| {
+                    reactor.as_mut().unwrap().register(
                         &self.listener.listener,
                         cx.waker().clone(),
                         EpollFlags::EPOLLIN,
@@ -93,13 +97,14 @@ impl<'a, 'b> Future for StreamRead<'a, 'b> {
         match stream.read(buf) {
             Ok(size) => Poll::Ready(Ok(size)),
             Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
-                scheduler::SCHEDULER.with_borrow_mut(|scheduler| {
-                    scheduler.as_mut().unwrap().reactor().register(
+                REACTOR.with_borrow_mut(|reactor| {
+                    reactor.as_mut().unwrap().register(
                         stream,
                         cx.waker().clone(),
-                        EpollFlags::EPOLLIN | EpollFlags::EPOLLOUT,
+                        EpollFlags::EPOLLIN,
                     )
                 });
+
                 Poll::Pending
             }
             Err(e) => Poll::Ready(Err(e)),

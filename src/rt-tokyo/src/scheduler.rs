@@ -12,6 +12,7 @@ use crate::{
 
 thread_local! {
     pub(super) static SCHEDULER: RefCell<Option<Scheduler>> = RefCell::new(None);
+    pub(super) static REACTOR: RefCell<Option<Reactor>> = RefCell::new(None);
 }
 
 #[derive(Default)]
@@ -19,7 +20,6 @@ pub struct Scheduler {
     next_id: TaskId,
     tasks: HashMap<TaskId, Task>,
     pending: Vec<TaskId>,
-    reactor: Reactor,
 }
 
 impl Scheduler {
@@ -38,15 +38,11 @@ impl Scheduler {
         self.pending.push(id);
     }
 
-    pub(crate) fn reactor(&mut self) -> &mut Reactor {
-        &mut self.reactor
-    }
-
     pub fn block_on<T, O>(self, main_task: T) -> O
     where
         T: Future<Output = O>,
     {
-        // inject the scheduler into the thread
+        // inject necessary data into the thread
         SCHEDULER.with_borrow_mut(|scheduler| {
             if scheduler.is_some() {
                 panic!("can not spawn more than 1 run time on the same thread");
@@ -54,12 +50,16 @@ impl Scheduler {
 
             *scheduler = Some(self);
         });
+        REACTOR.with_borrow_mut(|reactor| {
+            *reactor = Some(Reactor::default());
+        });
 
         // execute main future
         let output = Self::execute(main_task);
 
-        // remove the scheduler from thread
+        // remove the injected data from thread
         SCHEDULER.take();
+        REACTOR.take();
 
         output
     }
@@ -107,18 +107,17 @@ impl Scheduler {
                     SCHEDULER.with_borrow_mut(|scheduler| {
                         let scheduler = scheduler.as_mut().unwrap();
                         scheduler.tasks.insert(id, task);
-                        scheduler.pending.push(id);
                     });
                 }
             }
 
-            SCHEDULER.with_borrow(|scheduler| {
+            if SCHEDULER.with_borrow(|scheduler| {
                 let scheduler = scheduler.as_ref().unwrap();
-                if scheduler.pending.is_empty() {
-                    // block on reactor as we truly do not have any work left
-                    scheduler.reactor.block();
-                }
-            })
+                scheduler.pending.is_empty()
+            }) {
+                // block on reactor as we truly do not have any work left
+                REACTOR.with_borrow(|reactor| reactor.as_ref().unwrap().block())
+            }
         }
     }
 }

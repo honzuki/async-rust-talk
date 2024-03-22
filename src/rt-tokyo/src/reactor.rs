@@ -24,8 +24,9 @@ impl Reactor {
         Fd: AsFd + AsRawFd,
     {
         let id = fd.as_raw_fd() as u64;
-        self.events.insert(id, waker);
-        self.epoll.add(fd, EpollEvent::new(flags, id)).unwrap();
+        if let Ok(()) = self.epoll.add(fd, EpollEvent::new(flags, id)) {
+            self.events.insert(id, waker);
+        }
     }
 
     pub fn block(&self) {
