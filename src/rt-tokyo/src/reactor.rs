@@ -19,14 +19,29 @@ impl Reactor {
         }
     }
 
-    pub fn register<Fd>(&mut self, fd: &Fd, waker: Waker, flags: EpollFlags)
+    pub fn update_waker<Fd>(&mut self, fd: &Fd, waker: Waker)
     where
         Fd: AsFd + AsRawFd,
     {
         let id = fd.as_raw_fd() as u64;
-        if let Ok(()) = self.epoll.add(fd, EpollEvent::new(flags, id)) {
-            self.events.insert(id, waker);
-        }
+        self.events.insert(id, waker);
+    }
+
+    pub fn register<Fd>(&mut self, fd: &Fd, flags: EpollFlags)
+    where
+        Fd: AsFd + AsRawFd,
+    {
+        let id = fd.as_raw_fd() as u64;
+        let _ = self.epoll.add(fd, EpollEvent::new(flags, id));
+    }
+
+    pub fn remove<Fd>(&mut self, fd: &Fd)
+    where
+        Fd: AsFd + AsRawFd,
+    {
+        let id = fd.as_raw_fd() as u64;
+        self.events.remove(&id);
+        let _ = self.epoll.delete(fd);
     }
 
     pub fn block(&self) {
