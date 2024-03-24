@@ -25,6 +25,6 @@ async fn connection_handler(mut stream: TcpStream) {
             return;
         }
 
-        println!("{}", String::from_utf8_lossy(&buf[..rcount]));
+        stream.write(&buf[..rcount]).await.unwrap();
     }
 }
