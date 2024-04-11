@@ -8,15 +8,15 @@ fn main() {
     scheduler.block_on(async_main());
 }
 
-// async fn async_main() {
-//     let listener = TcpListener::bind("127.0.0.1:1663").unwrap();
-//     println!("server listening on: {}", listener.local_addr().unwrap());
+async fn async_main() {
+    let listener = TcpListener::bind("127.0.0.1:1663").unwrap();
+    println!("server listening on: {}", listener.local_addr().unwrap());
 
-//     loop {
-//         let (conn, _) = listener.accept().await.unwrap();
-//         Scheduler::spawn(connection_handler(conn));
-//     }
-// }
+    loop {
+        let (conn, _) = listener.accept().await.unwrap();
+        Scheduler::spawn(connection_handler(conn));
+    }
+}
 
 async fn connection_handler(mut stream: TcpStream) {
     let mut buf = [0u8; 1024];
@@ -26,17 +26,5 @@ async fn connection_handler(mut stream: TcpStream) {
         }
 
         stream.write(&buf[..rcount]).await.unwrap();
-    }
-}
-
-fn async_main() -> impl std::future::Future<Output = ()> {
-    async {
-        let listener = TcpListener::bind("127.0.0.1:1663").unwrap();
-        println!("server listening on: {}", listener.local_addr().unwrap());
-
-        loop {
-            let (conn, _) = listener.accept().await.unwrap();
-            Scheduler::spawn(connection_handler(conn));
-        }
     }
 }
