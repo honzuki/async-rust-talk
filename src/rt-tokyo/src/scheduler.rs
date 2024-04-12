@@ -22,6 +22,12 @@ pub struct Scheduler {
     pending: Vec<TaskId>,
 }
 
+enum ExecStatus {
+    Work,
+    NoTasks,
+    NoPending,
+}
+
 impl Scheduler {
     /// Spawn a new task on the current scheduler
     pub fn spawn(task: impl Future<Output = ()> + 'static) {
@@ -30,7 +36,7 @@ impl Scheduler {
             let scheduler = scheduler.as_mut().unwrap();
             let id = scheduler.next_id.next();
             scheduler.tasks.insert(id, task);
-            scheduler.pending.push(id);
+            scheduler.schedule(id);
         });
     }
 
@@ -38,10 +44,7 @@ impl Scheduler {
         self.pending.push(id);
     }
 
-    pub fn block_on<T, O>(self, main_task: T) -> O
-    where
-        T: Future<Output = O>,
-    {
+    pub fn block_on(self, main_task: impl Future<Output = ()> + 'static) {
         // inject necessary data into the thread
         SCHEDULER.with_borrow_mut(|scheduler| {
             if scheduler.is_some() {
@@ -54,70 +57,65 @@ impl Scheduler {
             *reactor = Some(Reactor::default());
         });
 
-        // execute main future
-        let output = Self::execute(main_task);
+        // spawn main task and start scheduling
+        Self::spawn(main_task);
+        Self::start();
 
         // remove the injected data from thread
         SCHEDULER.take();
         REACTOR.take();
-
-        output
     }
 
-    fn execute<T, O>(main_task: T) -> O
-    where
-        T: Future<Output = O>,
-    {
-        let mut main_task = std::pin::pin!(main_task);
-        let main_id = SCHEDULER.with_borrow_mut(|scheduler| {
-            let scheduler = scheduler.as_mut().unwrap();
-            let id = scheduler.next_id.next();
-            scheduler.pending.push(id);
-            id
-        });
-        let main_waker: Waker = main_id.into();
-
+    fn start() {
         loop {
             let pending = SCHEDULER.with_borrow_mut(|scheduler| {
                 std::mem::take(&mut scheduler.as_mut().unwrap().pending)
             });
+
             for id in pending {
-                if id == main_id {
-                    if let Poll::Ready(output) = main_task
-                        .as_mut()
-                        .poll(&mut Context::from_waker(&main_waker))
-                    {
-                        return output;
-                    }
-
-                    continue;
-                }
-
-                let task = SCHEDULER
-                    .with_borrow_mut(|scheduler| scheduler.as_mut().unwrap().tasks.remove(&id));
-                let Some(mut task) = task else {
-                    continue;
-                };
-
-                let waker: Waker = id.into();
-                if matches!(
-                    task.as_mut().poll(&mut Context::from_waker(&waker)),
-                    Poll::Pending
-                ) {
-                    SCHEDULER.with_borrow_mut(|scheduler| {
-                        let scheduler = scheduler.as_mut().unwrap();
-                        scheduler.tasks.insert(id, task);
-                    });
-                }
+                Self::run_task_by_id(id);
             }
 
-            if SCHEDULER.with_borrow(|scheduler| {
-                let scheduler = scheduler.as_ref().unwrap();
-                scheduler.pending.is_empty()
-            }) {
-                // block on reactor as we truly do not have any work left
-                REACTOR.with_borrow(|reactor| reactor.as_ref().unwrap().block())
+            match Self::status() {
+                ExecStatus::Work => continue,
+                ExecStatus::NoTasks => return,
+                ExecStatus::NoPending => {
+                    REACTOR.with_borrow(|reactor| reactor.as_ref().unwrap().block())
+                }
             }
         }
+    }
+
+    fn run_task_by_id(id: TaskId) {
+        let task =
+            SCHEDULER.with_borrow_mut(|scheduler| scheduler.as_mut().unwrap().tasks.remove(&id));
+        let Some(mut task) = task else {
+            return;
+        };
+
+        let waker: Waker = id.into();
+        match task.as_mut().poll(&mut Context::from_waker(&waker)) {
+            Poll::Pending => {
+                // we need to add the future back into the map
+                SCHEDULER.with_borrow_mut(|scheduler| {
+                    let scheduler = scheduler.as_mut().unwrap();
+                    scheduler.tasks.insert(id, task);
+                });
+            }
+            Poll::Ready(()) => {} // the future is finished executing, we can drop it
+        }
+    }
+
+    fn status() -> ExecStatus {
+        SCHEDULER.with_borrow(|scheduler| {
+            let scheduler = scheduler.as_ref().unwrap();
+            if scheduler.tasks.is_empty() {
+                return ExecStatus::NoTasks;
+            } else if scheduler.pending.is_empty() {
+                return ExecStatus::NoPending;
+            } else {
+                return ExecStatus::Work;
+            }
+        })
     }
 }

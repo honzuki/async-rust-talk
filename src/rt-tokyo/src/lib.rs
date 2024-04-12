@@ -23,7 +23,7 @@ mod tests {
     #[test]
     fn dumb_futures() {
         let scheduler = Scheduler::default();
-        assert_eq!(scheduler.block_on(DumbFuture { counter: 10 }), 0);
+        scheduler.block_on(DumbFuture { counter: 10 });
 
         let scheduler = Scheduler::default();
         scheduler.block_on(dumb_future_2());
@@ -34,7 +34,7 @@ mod tests {
     }
 
     impl Future for DumbFuture {
-        type Output = u64;
+        type Output = ();
 
         fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
             println!("counter: {}", self.counter);
@@ -45,7 +45,7 @@ mod tests {
                 return Poll::Pending;
             }
 
-            Poll::Ready(self.counter)
+            Poll::Ready(())
         }
     }
 
