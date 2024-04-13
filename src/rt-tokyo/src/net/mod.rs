@@ -1,4 +1,4 @@
-mod tcp;
+pub mod tcp;
 
 pub use std::net::SocketAddr;
 

@@ -18,6 +18,7 @@ impl Reactor {
             events: Default::default(),
         }
     }
+
     pub fn register<Fd>(&mut self, fd: &Fd, flags: EpollFlags)
     where
         Fd: AsFd + AsRawFd,

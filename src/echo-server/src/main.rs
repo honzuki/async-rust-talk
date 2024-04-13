@@ -9,7 +9,7 @@ fn main() {
 }
 
 async fn async_main() {
-    let listener = TcpListener::bind("127.0.0.1:1663").unwrap();
+    let mut listener = TcpListener::bind("127.0.0.1:1663").unwrap();
     println!("server listening on: {}", listener.local_addr().unwrap());
 
     loop {

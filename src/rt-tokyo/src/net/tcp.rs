@@ -22,7 +22,7 @@ impl Listener {
         Ok(Self { listener })
     }
 
-    pub fn accept(&self) -> impl Future<Output = ListenerAcceptOutput> + '_ {
+    pub fn accept(&mut self) -> impl Future<Output = ListenerAcceptOutput> + '_ {
         ListenerAccept::new(self)
     }
 
@@ -32,11 +32,11 @@ impl Listener {
 }
 
 struct ListenerAccept<'a> {
-    listener: &'a Listener,
+    listener: &'a mut Listener,
 }
 
 impl<'a> ListenerAccept<'a> {
-    fn new(listener: &'a Listener) -> Self {
+    fn new(listener: &'a mut Listener) -> Self {
         listener.listener.set_nonblocking(true).unwrap();
         REACTOR.with_borrow_mut(|reactor| {
             reactor
@@ -48,7 +48,7 @@ impl<'a> ListenerAccept<'a> {
     }
 }
 
-type ListenerAcceptOutput = std::io::Result<(Stream, super::SocketAddr)>;
+pub type ListenerAcceptOutput = std::io::Result<(Stream, super::SocketAddr)>;
 
 impl<'a> Future for ListenerAccept<'a> {
     type Output = ListenerAcceptOutput;
@@ -127,7 +127,7 @@ impl<'a, 'b> StreamRead<'a, 'b> {
     }
 }
 
-type StreamReadOutput = std::io::Result<usize>;
+pub type StreamReadOutput = std::io::Result<usize>;
 
 impl<'a, 'b> Future for StreamRead<'a, 'b> {
     type Output = StreamReadOutput;
@@ -181,7 +181,7 @@ impl<'a, 'b> StreamWrite<'a, 'b> {
     }
 }
 
-type StreamWriteOutput = std::io::Result<usize>;
+pub type StreamWriteOutput = std::io::Result<usize>;
 
 impl<'a, 'b> Future for StreamWrite<'a, 'b> {
     type Output = StreamWriteOutput;
